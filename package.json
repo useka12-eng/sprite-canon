@@ -1,0 +1,37 @@
+{
+  "name": "sprite-canon",
+  "version": "0.1.0",
+  "description": "MCP server that keeps AI-generated game sprites looking like ONE game: a per-project canon (palette, regions, scale) plus tools to measure, verify and deterministically repaint against it.",
+  "type": "module",
+  "bin": {
+    "sprite-canon": "src/mcp/server.mjs"
+  },
+  "main": "src/mcp/server.mjs",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node src/mcp/server.mjs",
+    "test": "node --test test/"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "pixel-art",
+    "sprite",
+    "gamedev",
+    "palette",
+    "consistency",
+    "asset-pipeline"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.0"
+  }
+}
