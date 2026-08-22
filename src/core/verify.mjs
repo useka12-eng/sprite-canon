@@ -48,13 +48,39 @@ export function checkPalette(frames, canon) {
     badCount ? `off-palette pixels (top: ${offenders.join(" ")})` : `${total}px all on palette`);
 }
 
-/** Landmarks stay put across frames of one animation. */
-export function checkJitter(frames, canon, opts = {}) {
-  const limit = opts.maxJitter ?? canon.checks.maxJitter;
-  const { jitter } = measureAnimation(frames, canon, opts);
-  const worst = [];
+const flatJitter = (jitter) => {
   const flat = { top: jitter.top, height: jitter.height, centerX: jitter.centerX };
   for (const [k, v] of Object.entries(jitter.regionTop ?? {})) flat[`regionTop.${k}`] = v;
+  return flat;
+};
+
+/** Landmarks stay put across frames of one animation.
+    With opts.baselineFrames (the original the sprite was derived from), the
+    check measures ADDED jitter instead of absolute jitter. Learned on real
+    assets: back-view walk frames legitimately jitter 3-5px on regionTop.skin
+    because the only visible skin is the swinging hands — a recolour that adds
+    zero movement must not fail for motion the original always had. */
+export function checkJitter(frames, canon, opts = {}) {
+  const { jitter } = measureAnimation(frames, canon, opts);
+  const flat = flatJitter(jitter);
+  if (opts.baselineFrames) {
+    const base = flatJitter(measureAnimation(opts.baselineFrames, canon, opts).jitter);
+    const limit = opts.maxAddedJitter ?? 0;
+    let max = -Infinity, maxKey = "";
+    const added = [];
+    for (const [k, v] of Object.entries(flat)) {
+      if (v == null) continue;
+      const d = v - (base[k] ?? 0);
+      if (d > max) { max = d; maxKey = k; }
+      if (d > limit) added.push(`${k}=+${d}`);
+    }
+    if (max === -Infinity) max = 0;
+    return check("jitter", max <= limit, Math.max(0, max), limit,
+      added.length ? `repaint ADDED jitter: ${added.join(" ")}` :
+        `no added jitter vs base (worst delta ${maxKey}=${max <= 0 ? max : "+" + max})`);
+  }
+  const limit = opts.maxJitter ?? canon.checks.maxJitter;
+  const worst = [];
   let max = 0, maxKey = "";
   for (const [k, v] of Object.entries(flat)) {
     if (v == null) continue;

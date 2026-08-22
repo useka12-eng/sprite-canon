@@ -209,6 +209,24 @@ test("jitter check catches a hat that jumps between frames", () => {
   assert.ok(r.value >= 3);
 });
 
+test("jitter vs base measures ADDED jitter, not motion the original always had", () => {
+  const stamp = (f, y) => { for (let x = 12; x <= 19; x++) { const o = (y * 32 + x) * 4; f.data[o] = 0x60; f.data[o + 1] = 0x40; f.data[o + 2] = 0x20; f.data[o + 3] = 255; } };
+  /* base animation that bobs 3px by itself (like swinging arms in a walk) */
+  const base = walkerFrames();
+  stamp(base[2], 0);                                   // frame 2 reaches y0, others start at y3 → top jitter 3
+  assert.ok(!checkJitter(base, CANON).pass, "absolute check flags the base itself");
+  /* a pure recolour of that base adds zero jitter → delta check must PASS */
+  const variant = base.map((f) => repaintFrame(f, CANON, "shirt", ["202060", "8080e0"]));
+  const r1 = checkJitter(variant, CANON, { baselineFrames: base });
+  assert.ok(r1.pass, `pre-existing motion must not fail a recolour: ${r1.details}`);
+  /* a variant that ADDS movement the base never had → delta check must FAIL */
+  const worse = variant.map((f) => ({ w: f.w, h: f.h, data: Buffer.from(f.data), delay: f.delay }));
+  stamp(worse[0], 31); stamp(worse[2], 31);            // new pixels below the feet in two frames → height jitter grows
+  const r2 = checkJitter(worse, CANON, { baselineFrames: base });
+  assert.ok(!r2.pass, `added movement must fail: ${r2.details}`);
+  assert.match(r2.details, /ADDED/);
+});
+
 test("group spread catches 'bright from behind'", () => {
   const front = walkerFrame(0);
   const back = walkerFrame(0);

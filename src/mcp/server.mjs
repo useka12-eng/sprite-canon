@@ -229,19 +229,21 @@ server.registerTool("sprite_verify", {
     let checksRun = 0;
     for (const it of loadedAll) {
       const fileChecks = [];
-      let pairedBase = null;
+      /* resolve the base once — jitter, protected and leftover all use it */
+      const basePath = a.baseFiles ? baseFor(it.file) : null;
+      const baseFrames = basePath ? loadFrames(basePath, a).frames : null;
       if (wanted.includes("palette")) fileChecks.push(checkPalette(it.frames, canon));
       if (wanted.includes("jitter")) {
-        if (it.frames.length > 1) fileChecks.push(checkJitter(it.frames, canon));
+        if (it.frames.length > 1)
+          /* with a base, jitter means ADDED jitter — motion the original
+             already had (swinging arms) must not fail a pure recolour */
+          fileChecks.push(checkJitter(it.frames, canon, baseFrames ? { baselineFrames: baseFrames } : {}));
         else fileChecks.push({ name: "jitter", pass: true, skipped: true, value: 0, limit: 0, details: "single frame — nothing to jitter, skipped" });
       }
       if ((wanted.includes("protected") || wanted.includes("leftover"))) {
-        const basePath = baseFor(it.file);
-        if (!basePath) {
+        if (!baseFrames) {
           fileChecks.push({ name: "pairing", pass: false, value: -1, limit: 0, details: `no base file paired with ${it.label} — pairing is by identical filename (case-insensitive), or by position when both lists have equal length` });
         } else {
-          pairedBase = path.basename(basePath);
-          const baseFrames = loadFrames(basePath, a).frames;
           if (wanted.includes("protected")) fileChecks.push(checkProtected(it.frames, baseFrames, canon));
           if (wanted.includes("leftover")) {
             if (!a.region) return fail("'leftover' needs `region`");
@@ -250,7 +252,7 @@ server.registerTool("sprite_verify", {
         }
       }
       checksRun += fileChecks.filter((c) => !c.skipped).length;
-      if (fileChecks.length) perFile.push({ file: it.label, ...(pairedBase ? { base: pairedBase } : {}), ...summarize(fileChecks) });
+      if (fileChecks.length) perFile.push({ file: it.label, ...(basePath ? { base: path.basename(basePath) } : {}), ...summarize(fileChecks) });
     }
     if (wanted.includes("spread")) {
       if (!a.region) return fail("'spread' needs `region`");
