@@ -2,6 +2,10 @@
 
 **MCP server that keeps AI-generated game sprites looking like ONE game.**
 
+![original vs deterministic repaints — shading survives, silhouettes never change](assets/demo.png)
+
+*One character, three outfits — the blue and red rows are `sprite_repaint` calls, not regenerations. Same shading order, same silhouette, same result every time.*
+
 AI generators are great at making a pretty sprite and terrible at making it match the last one. Ask for the same character twice and the palette drifts, the outfit mutates, the new hat floats 3 pixels above the head — each asset is fine alone, and the game looks wrong assembled. Regenerating "until it matches" doesn't converge; it burns money and you can't diff the result.
 
 sprite-canon takes the opposite approach, extracted from a real game project that generated ~4,000 frames and learned every lesson the hard way:
@@ -12,11 +16,18 @@ sprite-canon takes the opposite approach, extracted from a real game project tha
 
 ## Install
 
+### Claude Desktop — one click
+
+Download `sprite-canon.mcpb` from the [latest release](https://github.com/useka12-eng/sprite-canon/releases/latest), then double-click it (or drag it into Claude Desktop → Settings → Extensions). That's the whole install: the bundle ships its own dependencies, and Claude Desktop provides the Node runtime.
+
+### Claude Code / other MCP clients
+
 ```bash
-npm install
+git clone https://github.com/useka12-eng/sprite-canon
+cd sprite-canon && npm install
 ```
 
-Register with Claude Code (project `.mcp.json`) or any MCP client:
+Then register in your project's `.mcp.json` (or any MCP client config):
 
 ```json
 {
@@ -30,6 +41,12 @@ Register with Claude Code (project `.mcp.json`) or any MCP client:
 ```
 
 Requires Node 18+. No native dependencies — the PNG/GIF codecs are self-contained.
+
+### Build the bundle yourself
+
+```bash
+npx @anthropic-ai/mcpb pack . dist/sprite-canon.mcpb
+```
 
 ## Tools
 

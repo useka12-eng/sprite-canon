@@ -1,0 +1,43 @@
+{
+  "manifest_version": "0.2",
+  "name": "sprite-canon",
+  "display_name": "Sprite Canon",
+  "version": "0.1.0",
+  "description": "Keeps AI-generated game sprites looking like ONE game: per-project canon, numeric verification, deterministic repaints.",
+  "long_description": "AI generators make pretty sprites that don't match each other. Sprite Canon turns a project's consistency rules into data (sprite-canon.json: palette, named colour regions, relative scale, thresholds) and gives your AI assistant tools to measure sprite anatomy, verify consistency with hard pass/fail numbers, and fix assets with deterministic pixel operations instead of regeneration. Extracted from a real game pipeline that generated ~4,000 frames.",
+  "author": {
+    "name": "useka12-eng",
+    "url": "https://github.com/useka12-eng"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/useka12-eng/sprite-canon"
+  },
+  "homepage": "https://github.com/useka12-eng/sprite-canon",
+  "documentation": "https://github.com/useka12-eng/sprite-canon#readme",
+  "license": "MIT",
+  "keywords": ["pixel-art", "sprite", "gamedev", "palette", "consistency", "asset-pipeline"],
+  "server": {
+    "type": "node",
+    "entry_point": "src/mcp/server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/src/mcp/server.mjs"]
+    }
+  },
+  "tools": [
+    { "name": "canon_init", "description": "Create sprite-canon.json and learn the palette from sample images" },
+    { "name": "canon_learn", "description": "Define a colour region by sampling pixels; mark face/outline protected" },
+    { "name": "canon_info", "description": "Show the canon and census a file against it" },
+    { "name": "colors_inspect", "description": "List colours used in files by frequency" },
+    { "name": "sprite_measure", "description": "Per-frame anatomy and cross-frame jitter" },
+    { "name": "sprite_verify", "description": "Numeric consistency checks: palette, jitter, spread, protected, leftover, scale" },
+    { "name": "sprite_repaint", "description": "Deterministically recolour a region onto a colour ramp" },
+    { "name": "sprite_sheet", "description": "Zoomed contact sheet returned inline as an image" },
+    { "name": "gif_patch", "description": "Lossless GIF palette substitution and retiming" }
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": { "node": ">=18" }
+  }
+}

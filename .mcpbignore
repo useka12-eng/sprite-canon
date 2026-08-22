@@ -1,0 +1,8 @@
+/.git/
+/test/
+/assets/
+/demo-sheet.png
+/.gitignore
+/.mcpbignore
+*.mcpb
+/dist/

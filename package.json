@@ -26,6 +26,15 @@
     "consistency",
     "asset-pipeline"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/useka12-eng/sprite-canon.git"
+  },
+  "homepage": "https://github.com/useka12-eng/sprite-canon#readme",
+  "bugs": {
+    "url": "https://github.com/useka12-eng/sprite-canon/issues"
+  },
+  "author": "useka12-eng",
   "license": "MIT",
   "engines": {
     "node": ">=18"
