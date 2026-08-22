@@ -56,8 +56,10 @@ test("GIF round-trip is lossless for opaque pixels", () => {
 
 test("GIF palette patch recolours every frame without touching indices", () => {
   const buf = walkerGif();
-  const patched = patchPalettes(buf, { [COLORS.shirtMid]: "a04040" });
+  const { buffer: patched, replaced } = patchPalettes(buf, { [COLORS.shirtMid]: "a04040", "facade": "123456" });
   assert.equal(patched.length, buf.length, "lossless patch must not change file size");
+  assert.ok(replaced[COLORS.shirtMid] >= 1, "real colour reports actual substitutions");
+  assert.equal(replaced.facade, 0, "missing colour reports 0 — no fake success");
   const frames = decodeGif(patched);
   for (const f of frames) {
     let red = 0, green = 0;
@@ -74,16 +76,65 @@ test("GIF palette patch recolours every frame without touching indices", () => {
 });
 
 /* ---------- loader ---------- */
-test("spritesheet slicing skips empty cells and round-trips", () => {
-  const sheet = { w: 64, h: 32, data: Buffer.alloc(64 * 32 * 4) };
+test("spritesheet round-trip preserves cell positions, empty cells included", () => {
+  /* [empty | walker | walker] — an earlier version skipped the empty cell and
+     repacked from the top-left on save, silently shifting every sprite one
+     cell forward. Game code indexes sheets by cell; that was asset corruption. */
+  const sheet = { w: 96, h: 32, data: Buffer.alloc(96 * 32 * 4) };
   const f = walkerFrame(0);
-  for (let y = 0; y < 32; y++) f.data.copy(sheet.data, (y * 64) * 4, y * 32 * 4, (y + 1) * 32 * 4);
+  for (let y = 0; y < 32; y++) {
+    f.data.copy(sheet.data, (y * 96 + 32) * 4, y * 32 * 4, (y + 1) * 32 * 4);
+    f.data.copy(sheet.data, (y * 96 + 64) * 4, y * 32 * 4, (y + 1) * 32 * 4);
+  }
   fs.writeFileSync(T("sheet.png"), writePng(sheet));
   const loaded = loadFrames(T("sheet.png"), { cellW: 32, cellH: 32 });
-  assert.equal(loaded.frames.length, 1, "empty right cell skipped");
+  assert.equal(loaded.frames.length, 3, "every cell is a frame, empty ones included");
+  assert.equal(loaded.frames[0].data.every((v) => v === 0), true, "cell 0 stays empty");
   saveFrames(T("sheet2.png"), loaded);
-  const again = loadFrames(T("sheet2.png"), { cellW: 32, cellH: 32 });
-  assert.deepEqual(again.frames[0].data, loaded.frames[0].data);
+  const again = fs.readFileSync(T("sheet2.png"));
+  const back = loadFrames(T("sheet2.png"), { cellW: 32, cellH: 32 });
+  assert.equal(back.frames.length, 3);
+  assert.deepEqual(back.frames[1].data, loaded.frames[1].data, "cell 1 content in cell 1");
+  assert.equal(back.frames[0].data.every((v) => v === 0), true, "cell 0 still empty after round-trip");
+  void again;
+});
+
+test("GIF disposal 2 clears the PREVIOUS frame's rect, not the incoming one", () => {
+  /* Hand-assembled GIF: 4×2 canvas, two 2×2 frames at x=0 and x=2, both
+     disposal=2. Spec: frame 1 is cleared AFTER display, so decoded frame 2
+     must be transparent on the left. A decoder that clears the incoming
+     frame's own rect instead leaves frame 1 as a ghost. */
+  const pack3 = (codes) => {                          // pack 3-bit LZW codes LSB-first
+    const bytes = []; let cur = 0, nb = 0;
+    for (const c of codes) { cur |= c << nb; nb += 3; while (nb >= 8) { bytes.push(cur & 255); cur >>= 8; nb -= 8; } }
+    if (nb) bytes.push(cur & 255);
+    return Buffer.from(bytes);
+  };
+  const frameBlock = (x, colorIdx) => {
+    const desc = Buffer.alloc(10);
+    desc[0] = 0x2c; desc.writeUInt16LE(x, 1); desc.writeUInt16LE(0, 3);
+    desc.writeUInt16LE(2, 5); desc.writeUInt16LE(2, 7); desc[9] = 0;
+    /* clear,c,clear,c,clear,c,clear,c,eoi — clears keep every code 3-bit */
+    const lzw = pack3([4, colorIdx, 4, colorIdx, 4, colorIdx, 4, colorIdx, 5]);
+    return Buffer.concat([
+      Buffer.from([0x21, 0xf9, 0x04, (2 << 2) | 0x00, 0x02, 0x00, 0x00, 0x00]),  // GCE: disposal 2, no transparency
+      desc, Buffer.from([0x02]), Buffer.from([lzw.length]), lzw, Buffer.from([0x00]),
+    ]);
+  };
+  const head = Buffer.alloc(7);
+  head.writeUInt16LE(4, 0); head.writeUInt16LE(2, 2); head[4] = 0x80 | 1; // GCT 4 entries... 2-bit
+  const gct = Buffer.from([255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0]);      // red, blue, pad, pad
+  const gif = Buffer.concat([
+    Buffer.from("GIF89a"), head, gct,
+    frameBlock(0, 0),                                  // frame 1: red at x0..1
+    frameBlock(2, 1),                                  // frame 2: blue at x2..3
+    Buffer.from([0x3b]),
+  ]);
+  const frames = decodeGif(gif);
+  assert.equal(frames.length, 2);
+  assert.equal(frames[0].data[3], 255, "frame 1: red visible");
+  assert.equal(frames[1].data[3], 0, "frame 2: frame 1's rect was disposed — left side transparent");
+  assert.equal(frames[1].data[(2) * 4 + 3], 255, "frame 2: blue visible on the right");
 });
 
 /* ---------- measure ---------- */

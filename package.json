@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "start": "node src/mcp/server.mjs",
-    "test": "node --test test/"
+    "test": "node --test test/core.test.mjs test/mcp.test.mjs"
   },
   "keywords": [
     "mcp",

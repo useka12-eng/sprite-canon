@@ -105,7 +105,10 @@ export function checkProtected(frames, baseFrames, canon) {
     for (let i = 0; i < f.w * f.h; i++) {
       const o = i * 4;
       if (b.data[o + 3] < 128) continue;
-      const changed = f.data[o] !== b.data[o] || f.data[o + 1] !== b.data[o + 1] || f.data[o + 2] !== b.data[o + 2];
+      /* alpha counts as a change too — erasing a protected pixel's alpha while
+         leaving its RGB bytes is still destroying the face */
+      const changed = f.data[o] !== b.data[o] || f.data[o + 1] !== b.data[o + 1] || f.data[o + 2] !== b.data[o + 2]
+        || (f.data[o + 3] < 128);
       if (!changed) continue;
       for (const [name, g] of guards)
         if (g(b.data[o], b.data[o + 1], b.data[o + 2])) { bad++; byRegion[name] = (byRegion[name] || 0) + 1; }
@@ -123,19 +126,23 @@ export function checkLeftover(frames, baseFrames, canon, regionName) {
   let leftover = 0;
   for (let fi = 0; fi < frames.length; fi++) {
     const f = frames[fi], b = baseFrames[Math.min(fi, baseFrames.length - 1)];
-    /* the changed area = rows that contain at least one changed pixel */
-    let yMax = -1;
+    /* the changed band = [first, last] rows containing at least one changed
+       pixel — bounded on BOTH sides, so a repaint restricted to the boots
+       doesn't flag untouched region pixels up at the hat as leftovers */
+    let yMin = 1e9, yMax = -1;
     for (let i = 0; i < f.w * f.h; i++) {
       const o = i * 4;
       if (b.data[o + 3] < 128) continue;
       if (f.data[o] !== b.data[o] || f.data[o + 1] !== b.data[o + 1] || f.data[o + 2] !== b.data[o + 2]) {
         const y = Math.floor(i / f.w);
+        if (y < yMin) yMin = y;
         if (y > yMax) yMax = y;
       }
     }
     if (yMax < 0) continue;
     for (let i = 0; i < f.w * f.h; i++) {
-      if (Math.floor(i / f.w) > yMax) continue;
+      const y = Math.floor(i / f.w);
+      if (y < yMin || y > yMax) continue;
       const o = i * 4;
       if (b.data[o + 3] < 128) continue;
       const same = f.data[o] === b.data[o] && f.data[o + 1] === b.data[o + 1] && f.data[o + 2] === b.data[o + 2];
@@ -150,7 +157,9 @@ export function checkLeftover(frames, baseFrames, canon, regionName) {
     items: [{ label, frames, name }] where name keys canon.scale.heights. */
 export function checkScale(items, canon, opts = {}) {
   const table = canon.scale?.heights;
-  if (!table) return check("scale", true, 0, 0, "no scale table in canon — skipped");
+  if (!table) return check("scale", true, 0, 0, "no scale table in canon — add canon.scale.heights (e.g. {\"hero\":1,\"house\":3.4}) to sprite-canon.json — skipped");
+  if (!items.length)
+    return check("scale", false, -1, 0, "no files matched scaleNames — keys must be file basenames like \"hero.png\"");
   const tolerance = opts.scaleTolerance ?? 0.12;      // 12% relative error allowed
   const ref = items.find((it) => table[it.name] === 1) ?? items[0];
   const heightOf = (it) => {

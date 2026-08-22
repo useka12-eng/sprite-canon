@@ -20,7 +20,19 @@ export function decodeGif(buf) {
   if (flags & 0x80) { const n = 2 << (flags & 7); gct = buf.subarray(p, p + n * 3); p += n * 3; }
   const frames = [];
   let transparent = -1, delay = 10, dispose = 0;
+  /* GIF89a disposal applies AFTER a frame is displayed, to THAT frame's rect.
+     (An earlier version cleared the incoming frame's own rect before drawing
+     it — which happens to be correct only when every frame shares one rect,
+     i.e. for this package's own encoder output, and ghosts on optimised GIFs
+     whose rects differ per frame.) */
+  let pending = null;                                  // { dispose, rect, snapshot } of the frame just displayed
   const canvas = Buffer.alloc(W * H * 4);
+  const clearRect = (r) => {
+    for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) {
+      const o = ((r.y + y) * W + r.x + x) * 4;
+      canvas[o] = canvas[o + 1] = canvas[o + 2] = canvas[o + 3] = 0;
+    }
+  };
   while (p < buf.length) {
     const b = buf[p];
     if (b === 0x21) {                                  // extension
@@ -33,6 +45,12 @@ export function decodeGif(buf) {
       while (buf[p] !== 0) p += buf[p] + 1;
       p++;
     } else if (b === 0x2c) {                           // image descriptor
+      /* dispose of the PREVIOUS frame now, before drawing this one */
+      if (pending) {
+        if (pending.dispose === 2) clearRect(pending.rect);
+        else if (pending.dispose === 3 && pending.snapshot) pending.snapshot.copy(canvas);
+        pending = null;
+      }
       const ix = buf.readUInt16LE(p + 1), iy = buf.readUInt16LE(p + 3);
       const iw = buf.readUInt16LE(p + 5), ih = buf.readUInt16LE(p + 7);
       const lf = buf[p + 9]; p += 10;
@@ -44,10 +62,7 @@ export function decodeGif(buf) {
       while (buf[p] !== 0) { const len = buf[p]; chunks.push(buf.subarray(p + 1, p + 1 + len)); p += len + 1; }
       p++;
       const idx = lzwDecode(minCode, Buffer.concat(chunks), iw * ih);
-      if (dispose === 2) for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
-        const o = ((iy + y) * W + ix + x) * 4;
-        canvas[o] = canvas[o + 1] = canvas[o + 2] = canvas[o + 3] = 0;
-      }
+      const snapshot = dispose === 3 ? Buffer.from(canvas) : null;
       const rows = [];
       if (interlaced) { let r = 0; for (const [s, st] of [[0, 8], [4, 8], [2, 4], [1, 2]]) for (let y = s; y < ih; y += st) rows[y] = r++; }
       for (let y = 0; y < ih; y++) {
@@ -60,6 +75,8 @@ export function decodeGif(buf) {
         }
       }
       frames.push({ w: W, h: H, data: Buffer.from(canvas), delay });
+      pending = { dispose, rect: { x: ix, y: iy, w: iw, h: ih }, snapshot };
+      dispose = 0; transparent = -1;
     } else break;
   }
   return frames;
@@ -206,10 +223,15 @@ function lzwEncode(idx, minCode) {
      local tables. Patch every table.
    - Index positions differ between tables, so matching must be done by RGB value,
      not by index.
-   map: { "rrggbb": "rrggbb", ... }  (lowercase hex, no #) */
+   map: { "rrggbb": "rrggbb", ... }  (lowercase hex, no #)
+   Returns { buffer, replaced } where replaced counts ACTUAL table-entry
+   substitutions per source colour. A colorMap entry with zero hits means the
+   source hex isn't in the file (typo, 1-bit-off colour) — callers must be
+   able to see that instead of a fake success. */
 export function patchPalettes(buf, map) {
   const out = Buffer.from(buf);
   const norm = new Map(Object.entries(map).map(([a, b]) => [a.toLowerCase().replace("#", ""), b.toLowerCase().replace("#", "")]));
+  const replaced = Object.fromEntries([...norm.keys()].map((k) => [k, 0]));
   const patchTable = (offset, n) => {
     for (let i = 0; i < n; i++) {
       const o = offset + i * 3;
@@ -219,6 +241,7 @@ export function patchPalettes(buf, map) {
       out[o] = parseInt(to.slice(0, 2), 16);
       out[o + 1] = parseInt(to.slice(2, 4), 16);
       out[o + 2] = parseInt(to.slice(4, 6), 16);
+      replaced[hex]++;
     }
   };
   let p = 6 + 4;
@@ -235,5 +258,5 @@ export function patchPalettes(buf, map) {
       p++;
     } else break;
   }
-  return out;
+  return { buffer: out, replaced };
 }

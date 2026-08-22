@@ -106,13 +106,20 @@ test("full workflow", async () => {
   assert.ok(sheetRes.content.some((c) => c.type === "image"), "sheet returned inline");
   assert.ok(fs.existsSync(path.join(dir, "sheet.png")));
 
-  /* 8. lossless gif palette patch */
+  /* 8. lossless gif palette patch — response reports REAL substitution counts */
   const gp = j(await call("gif_patch", {
     file: path.join(dir, "walk.gif"), outFile: path.join(dir, "walk-red.gif"),
     action: "palette", colorMap: { [COLORS.shirtMid]: "a04040" },
   }));
-  assert.equal(gp.patched, 1);
+  assert.ok(gp.replaced[COLORS.shirtMid] >= 1);
   assert.equal(fs.statSync(path.join(dir, "walk-red.gif")).size, fs.statSync(path.join(dir, "walk.gif")).size);
+  /* a typo'd hex must warn, not fake success */
+  const gpMiss = j(await call("gif_patch", {
+    file: path.join(dir, "walk.gif"), outFile: path.join(dir, "walk-x.gif"),
+    action: "palette", colorMap: { deadbe: "a04040" },
+  }));
+  assert.equal(gpMiss.replaced.deadbe, 0);
+  assert.match(gpMiss.warning, /colors_inspect/);
 
   /* 9. retime */
   const rt = j(await call("gif_patch", {
@@ -126,6 +133,29 @@ test("colors_inspect lists frequencies", async () => {
   const r = j(await call("colors_inspect", { files: [path.join(dir, "walker.png")], top: 5 }));
   assert.ok(r.distinctColors >= 8);
   assert.ok(r.colors[0].count > r.colors[4].count);
+});
+
+test("verify refuses to claim pass when no check actually ran", async () => {
+  const res = j(await call("sprite_verify", {
+    files: [path.join(dir, "walker.png")], checks: ["jitter"],   // single frame → jitter has nothing to do
+    canonPath: path.join(dir, "sprite-canon.json"),
+  }));
+  assert.equal(res.pass, false);
+  assert.match(res.warning, /no checks actually ran/);
+});
+
+test("base pairing is by filename when names align, and is echoed in the result", async () => {
+  /* same filename in two dirs → by-name pairing regardless of order */
+  const oDir = path.join(dir, "orig"), vDir = path.join(dir, "vari");
+  fs.mkdirSync(oDir, { recursive: true }); fs.mkdirSync(vDir, { recursive: true });
+  fs.writeFileSync(path.join(oDir, "walker.png"), walkerPng());
+  fs.writeFileSync(path.join(vDir, "walker.png"), walkerPng());
+  const res = j(await call("sprite_verify", {
+    files: [vDir], baseFiles: [oDir], checks: ["protected"],
+    canonPath: path.join(dir, "sprite-canon.json"),
+  }));
+  assert.ok(res.pass, JSON.stringify(res));
+  assert.equal(res.files[0].base, "walker.png", "pairing is visible in the result");
 });
 
 test("helpful error when canon is missing", async () => {

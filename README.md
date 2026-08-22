@@ -68,6 +68,23 @@ These are not hypothetical — each one shipped as a real defect first:
 - **Patch GIF palettes, don't re-encode.** An indexed GIF's colours live in its colour tables — global *and* per-frame local ones (patching only the global table is the classic half-fix). Substituting table entries re-dresses every frame in perfect sync with zero loss.
 - **Region definitions have gaps; census them.** 12 stray pixels of the old colour surviving a repaint is invisible to the eye and obvious to `leftover`. When it fires, `canon_info`'s census shows which colours your regions don't cover.
 
+## The scale table
+
+`sprite_verify`'s `scale` check reads `canon.scale.heights` — relative sizes in units of a reference asset (the entry equal to `1`). No tool writes this section yet; add it to `sprite-canon.json` by hand:
+
+```json
+"scale": { "heights": { "hero": 1, "house": 3.4, "chicken": 0.45 } }
+```
+
+Then verify with `scaleNames` mapping file basenames to those keys. This catches the classic "the house is smaller than the hero" a week before your players do.
+
+## Practical notes
+
+- **Always pass `canonPath`** (or a file the canon sits above). A stdio MCP server's working directory belongs to the *client*, not your project, so the tools refuse to guess from cwd.
+- Codec limits: PNG must be 8-bit, non-interlaced, RGB/RGBA/palette (the common pixel-art cases; 16-bit or interlaced files are rejected with a clear error). The GIF encoder is exact up to 255 opaque colours per file — beyond that, nearest-palette snapping.
+- `sprite_sheet` returns the image inline up to ~800 KB; larger sheets return the file path only.
+- Spritesheets round-trip cell-for-cell: empty cells stay empty, nothing is compacted.
+
 ## What this is not
 
 - Not a generator. Pair it with whatever makes your art (PixelLab, Aseprite, Gemini, hand pixels); sprite-canon is the layer that keeps the results coherent.
@@ -77,7 +94,9 @@ These are not hypothetical — each one shipped as a real defect first:
 ## Development
 
 ```bash
-npm test          # unit + end-to-end MCP tests (19)
+npm test          # unit + end-to-end MCP tests (22)
 ```
+
+The test suite includes regression tests for every bug an adversarial multi-agent review found in v0.1 — sheet cell compaction, GIF disposal semantics, fake-success responses, silent zero-check passes. If one fails, a bug that already existed once is back.
 
 MIT

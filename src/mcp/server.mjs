@@ -36,9 +36,14 @@ const ok = (obj) => ({ content: [{ type: "text", text: JSON.stringify(obj, null,
 const fail = (msg) => ({ content: [{ type: "text", text: JSON.stringify({ error: msg }) }], isError: true });
 
 function resolveCanon(canonPath, fileHint) {
-  const p = canonPath
-    ?? findCanon(fileHint ? path.dirname(path.resolve(fileHint)) : process.cwd());
-  if (!p) throw new Error(`no ${CANON_FILE} found — run canon_init first (searched upward from ${fileHint ?? process.cwd()})`);
+  /* No process.cwd() fallback: a stdio MCP server's cwd belongs to the CLIENT
+     (Claude Desktop launches servers from "/" on macOS and its install dir on
+     Windows), so cwd-relative discovery would either always fail or silently
+     pick up an unrelated project's canon higher in the tree. */
+  if (!canonPath && !fileHint)
+    throw new Error(`pass canonPath — without a target file there is nothing to search from (the MCP server's working directory is not your project)`);
+  const p = canonPath ?? findCanon(path.dirname(path.resolve(fileHint)));
+  if (!p) throw new Error(`no ${CANON_FILE} found — run canon_init first (searched upward from ${fileHint})`);
   return { path: p, canon: loadCanon(p) };
 }
 
@@ -48,7 +53,9 @@ function expandFiles(files) {
     const st = fs.existsSync(f) && fs.statSync(f);
     if (!st) throw new Error(`not found: ${f}`);
     if (st.isDirectory()) {
-      for (const e of fs.readdirSync(f))
+      /* sorted — readdir order is filesystem-dependent, and positional
+         pairing of two directory listings must not depend on it */
+      for (const e of fs.readdirSync(f).sort())
         if (/\.(png|gif)$/i.test(e)) out.push(path.join(f, e));
     } else out.push(f);
   }
@@ -69,22 +76,28 @@ server.registerTool("canon_init", {
     name: z.string().optional().describe("project name"),
     sampleFiles: z.array(z.string()).optional().describe("PNG/GIF files or directories to learn the palette from"),
     minCount: z.number().int().optional().describe("min occurrences for a colour to enter the palette (default 4)"),
+    updatePalette: z.boolean().optional().describe("relearn just the palette of an EXISTING canon from sampleFiles (regions/scale/checks untouched)"),
     ...cellOpts,
   },
 }, async (a) => {
   try {
     const p = path.join(a.dir, CANON_FILE);
-    if (fs.existsSync(p)) return fail(`${p} already exists — edit it directly or delete it first`);
-    const canon = { version: 1, name: a.name ?? path.basename(path.resolve(a.dir)), regions: {}, checks: { ...DEFAULT_CHECKS } };
+    if (fs.existsSync(p) && !a.updatePalette)
+      return fail(`${p} already exists — pass updatePalette=true to relearn just the palette, or edit the file directly`);
+    const canon = fs.existsSync(p)
+      ? loadCanon(p)
+      : { version: 1, name: a.name ?? path.basename(path.resolve(a.dir)), regions: {}, checks: { ...DEFAULT_CHECKS } };
     let learned = null;
     if (a.sampleFiles?.length) {
       learned = learnPalette(expandFiles(a.sampleFiles), { minCount: a.minCount, cellW: a.cellW, cellH: a.cellH });
       canon.palette = { colors: learned.colors };
+    } else if (a.updatePalette) {
+      return fail("updatePalette=true needs sampleFiles to learn from");
     }
     saveCanon(p, canon);
     return ok({
       created: p,
-      palette: learned ? { colors: learned.colors.length, droppedRareColors: learned.dropped } : "none — add later with canon_learn",
+      palette: learned ? { colors: learned.colors.length, droppedRareColors: learned.dropped } : "none — rerun canon_init with sampleFiles and updatePalette=true to add one",
       next: "define regions with canon_learn (sample a few pixels per region), mark face/outline regions protected",
     });
   } catch (e) { return fail(e.message); }
@@ -93,11 +106,12 @@ server.registerTool("canon_init", {
 /* ---------- canon_learn ---------- */
 server.registerTool("canon_learn", {
   description:
-    "Define or update a named region in the canon by sampling pixels (e.g. skin, hair, outfit, outline). " +
-    "Give a few [x,y] points on sample images; the sampled colours (optionally expanded by `spread`) become the region. " +
+    "Define or update a named region in the canon (e.g. skin, hair, outfit, outline). " +
+    "Give a few [x,y] points on sample images; the sampled colours (optionally expanded by `absorb`) become the region. " +
     "The region's luminance range is recorded — repaint uses that FIXED range so the same source colour always maps to the same output colour in every frame and direction. " +
     "Mark regions like face/eyes/outline as protected: repaint will never touch them and verify will fail if anything else does. " +
-    "Instead of points you may pass explicit `colors`, or an HSL rule (hue/sat/light ranges) for anti-aliased art.",
+    "Instead of points you may pass explicit `colors`, or an HSL rule (hue/sat/light ranges) for anti-aliased art — an HSL-only region additionally needs `lumRange` if you ever want to repaint it. " +
+    "Updates MERGE additively into an existing region; pass replace=true to redefine it from scratch (the only way to remove a mis-sampled colour).",
   inputSchema: {
     region: z.string().describe("region name, e.g. 'skin' / 'outline' / 'cloak'"),
     samples: z.array(z.object({
@@ -109,16 +123,18 @@ server.registerTool("canon_learn", {
     hue: z.tuple([z.number(), z.number()]).optional().describe("HSL rule: hue range in degrees"),
     sat: z.tuple([z.number(), z.number()]).optional().describe("HSL rule: saturation range 0..1"),
     light: z.tuple([z.number(), z.number()]).optional().describe("HSL rule: lightness range 0..1"),
-    spread: z.number().int().optional().describe("also absorb colours within this per-channel distance of sampled ones (default 0)"),
+    lumRange: z.tuple([z.number(), z.number()]).optional().describe("fixed luminance range (0-255) for repainting — required for HSL-only regions, auto-computed for colour lists"),
+    absorb: z.number().int().optional().describe("also absorb colours within this per-channel distance of sampled ones (default 0)"),
+    replace: z.boolean().optional().describe("redefine the region from scratch instead of merging (default false)"),
     protected: z.boolean().optional().describe("mark as protected (never repainted, verified untouched)"),
     ...canonOpt, ...cellOpts,
   },
 }, async (a) => {
   try {
     const { path: p, canon } = resolveCanon(a.canonPath, a.samples?.[0]?.file);
-    const def = canon.regions[a.region] ?? {};
+    const def = a.replace ? {} : (canon.regions[a.region] ?? {});
     if (a.samples?.length) {
-      const learned = learnRegionFromPoints(a.samples, { spread: a.spread, cellW: a.cellW, cellH: a.cellH });
+      const learned = learnRegionFromPoints(a.samples, { spread: a.absorb, cellW: a.cellW, cellH: a.cellH });
       def.colors = [...new Set([...(def.colors ?? []), ...learned.colors])];
       def.lumRange = computeLumRange(def);
     }
@@ -126,16 +142,18 @@ server.registerTool("canon_learn", {
     if (a.hue) def.hue = a.hue;
     if (a.sat) def.sat = a.sat;
     if (a.light) def.light = a.light;
+    if (a.lumRange) def.lumRange = a.lumRange;
     if (a.protected !== undefined) def.protected = a.protected;
     if (!def.colors && !def.hue && !def.sat && !def.light)
       return fail("give samples, colors, or an HSL rule");
     canon.regions[a.region] = def;
     saveCanon(p, canon);
     return ok({
-      canon: p, region: a.region,
+      canon: p, region: a.region, merged: !a.replace && !!canon.regions[a.region],
       colors: def.colors?.length ?? 0, lumRange: def.lumRange ?? null,
       rule: { hue: def.hue, sat: def.sat, light: def.light },
       protected: !!def.protected,
+      ...(def.lumRange == null && !def.colors ? { warning: "HSL-only region without lumRange — sprite_repaint will refuse it until you set lumRange" } : {}),
     });
   } catch (e) { return fail(e.message); }
 });
@@ -155,7 +173,9 @@ server.registerTool("sprite_measure", {
     try { canon = resolveCanon(a.canonPath, a.file).canon; } catch { /* measuring without a canon is fine */ }
     const { frames } = loadFrames(a.file, a);
     const m = measureAnimation(frames, canon);
-    return ok({ file: a.file, frameCount: frames.length, ...m });
+    /* canonUsed tells the caller whether missing regionTop fields mean
+       "no such region in this sprite" or "no canon was loaded at all" */
+    return ok({ file: a.file, frameCount: frames.length, canonUsed: !!canon, ...m });
   } catch (e) { return fail(e.message); }
 });
 
@@ -170,7 +190,7 @@ server.registerTool("sprite_verify", {
     files: z.array(z.string()).describe("files or directories to verify"),
     checks: z.array(z.enum(["palette", "jitter", "spread", "protected", "leftover", "scale"])).optional()
       .describe("which checks to run (default: palette + jitter)"),
-    baseFiles: z.array(z.string()).optional().describe("originals paired to files by filename — required for 'protected'/'leftover'"),
+    baseFiles: z.array(z.string()).optional().describe("originals for 'protected'/'leftover'. Paired to files by identical filename (case-insensitive) when names line up, otherwise by list position (equal lengths required). Each result echoes which base it was compared against."),
     region: z.string().optional().describe("region name for 'spread'/'leftover'"),
     scaleNames: z.record(z.string(), z.string()).optional().describe("for 'scale': map of filename -> name in canon.scale.heights"),
     ...canonOpt, ...cellOpts,
@@ -183,32 +203,44 @@ server.registerTool("sprite_verify", {
     const wanted = a.checks ?? ["palette", "jitter"];
     const loadedAll = files.map((f) => ({ file: f, label: path.basename(f), frames: loadFrames(f, a).frames }));
 
-    /* Base pairing: positional when counts match (variants usually have
-       different filenames than their originals), by basename otherwise
-       (directory-vs-directory comparison). */
+    /* Base pairing. By FILENAME first (case-insensitive — Windows/macOS
+       filesystems ignore case) whenever every file has exactly one matching
+       base; positional only as a fallback for equal-length lists with
+       non-matching names (variant files are usually renamed). The pairing is
+       echoed in each file's result so a wrong pairing is visible, not silent. */
     let baseFor = () => null;
     if (a.baseFiles) {
       const bases = expandFiles(a.baseFiles);
-      if (bases.length === files.length) {
+      const byName = new Map();
+      for (const f of bases) {
+        const k = path.basename(f).toLowerCase();
+        byName.set(k, byName.has(k) ? null : f);       // null = ambiguous duplicate
+      }
+      const allNamed = files.every((f) => byName.get(path.basename(f).toLowerCase()));
+      if (allNamed) baseFor = (file) => byName.get(path.basename(file).toLowerCase());
+      else if (bases.length === files.length) {
         const byIndex = new Map(files.map((f, i) => [f, bases[i]]));
         baseFor = (file) => byIndex.get(file);
-      } else {
-        const byName = new Map(bases.map((f) => [path.basename(f), f]));
-        baseFor = (file) => byName.get(path.basename(file));
       }
     }
 
     const results = [];
     const perFile = [];
+    let checksRun = 0;
     for (const it of loadedAll) {
       const fileChecks = [];
+      let pairedBase = null;
       if (wanted.includes("palette")) fileChecks.push(checkPalette(it.frames, canon));
-      if (wanted.includes("jitter") && it.frames.length > 1) fileChecks.push(checkJitter(it.frames, canon));
+      if (wanted.includes("jitter")) {
+        if (it.frames.length > 1) fileChecks.push(checkJitter(it.frames, canon));
+        else fileChecks.push({ name: "jitter", pass: true, skipped: true, value: 0, limit: 0, details: "single frame — nothing to jitter, skipped" });
+      }
       if ((wanted.includes("protected") || wanted.includes("leftover"))) {
         const basePath = baseFor(it.file);
         if (!basePath) {
-          fileChecks.push({ name: "protected", pass: false, value: -1, limit: 0, details: `no base file paired with ${it.label}` });
+          fileChecks.push({ name: "pairing", pass: false, value: -1, limit: 0, details: `no base file paired with ${it.label} — pairing is by identical filename (case-insensitive), or by position when both lists have equal length` });
         } else {
+          pairedBase = path.basename(basePath);
           const baseFrames = loadFrames(basePath, a).frames;
           if (wanted.includes("protected")) fileChecks.push(checkProtected(it.frames, baseFrames, canon));
           if (wanted.includes("leftover")) {
@@ -217,21 +249,29 @@ server.registerTool("sprite_verify", {
           }
         }
       }
-      if (fileChecks.length) perFile.push({ file: it.label, ...summarize(fileChecks) });
+      checksRun += fileChecks.filter((c) => !c.skipped).length;
+      if (fileChecks.length) perFile.push({ file: it.label, ...(pairedBase ? { base: pairedBase } : {}), ...summarize(fileChecks) });
     }
     if (wanted.includes("spread")) {
       if (!a.region) return fail("'spread' needs `region`");
       results.push(checkGroupSpread(loadedAll, canon, a.region));
+      checksRun++;
     }
     if (wanted.includes("scale")) {
       if (!a.scaleNames) return fail("'scale' needs `scaleNames`");
+      /* accept full paths or basenames as keys, case-insensitively */
+      const nameOf = new Map(Object.entries(a.scaleNames).map(([k, v]) => [path.basename(k).toLowerCase(), v]));
       const items = loadedAll
-        .filter((it) => a.scaleNames[it.label])
-        .map((it) => ({ ...it, name: a.scaleNames[it.label] }));
+        .filter((it) => nameOf.get(it.label.toLowerCase()))
+        .map((it) => ({ ...it, name: nameOf.get(it.label.toLowerCase()) }));
       results.push(checkScale(items, canon));
+      checksRun++;
     }
+    /* "everything passed" must never mean "nothing ran" */
+    if (checksRun === 0)
+      return ok({ pass: false, files: perFile, group: results, warning: "no checks actually ran — nothing was verified (e.g. 'jitter' on single-frame files)" });
     const pass = perFile.every((f) => f.pass) && results.every((c) => c.pass);
-    return ok({ pass, files: perFile, group: results });
+    return ok({ pass, checksRun, files: perFile, group: results });
   } catch (e) { return fail(e.message); }
 });
 
@@ -312,15 +352,15 @@ server.registerTool("sprite_sheet", {
 /* ---------- gif_patch ---------- */
 server.registerTool("gif_patch", {
   description:
-    "Lossless operations on animated GIFs. " +
-    "'palette' swaps colours in every colour table (global AND per-frame local — patching only the global table is a classic half-fix) without touching frame data: zero generation loss, every frame changes in perfect sync — the correct way to re-dress an indexed sprite. " +
-    "'retime' re-times all frames to msPerFrame (re-encodes pixels losslessly). Real bug this fixes: an animation authored at 1.8s being cut off by game code that frees the sprite after 0.62s — retime the GIF instead of dropping frames.",
+    "Operations on animated GIFs. " +
+    "'palette' swaps colours in every colour table (global AND per-frame local — patching only the global table is a classic half-fix) without touching frame data: zero generation loss, every frame changes in perfect sync — the correct way to re-dress an indexed sprite. The response reports how many table entries each source colour actually matched; 0 means that hex isn't in the file (use colors_inspect to find the exact hexes). " +
+    "'retime' re-times all frames to msPerFrame. GIF delays are quantised to 10ms steps with a 20ms minimum; pixels survive a decode/re-encode that is exact up to 255 opaque colours (beyond that, nearest-palette snapping). Real bug this fixes: an animation authored at 1.8s being cut off by game code that frees the sprite after 0.62s — retime the GIF instead of dropping frames.",
   inputSchema: {
     file: z.string(),
     outFile: z.string(),
     action: z.enum(["palette", "retime"]),
     colorMap: z.record(z.string(), z.string()).optional().describe("for 'palette': { fromHex: toHex, ... }"),
-    msPerFrame: z.number().optional().describe("for 'retime': delay per frame in milliseconds"),
+    msPerFrame: z.number().optional().describe("for 'retime': delay per frame in ms (quantised to 10ms steps, min 20ms)"),
   },
 }, async (a) => {
   try {
@@ -329,10 +369,15 @@ server.registerTool("gif_patch", {
     fs.mkdirSync(path.dirname(path.resolve(a.outFile)), { recursive: true });
     if (a.action === "palette") {
       if (!a.colorMap) return fail("'palette' needs colorMap");
-      fs.writeFileSync(a.outFile, patchPalettes(buf, a.colorMap));
-      return ok({ wrote: a.outFile, patched: Object.keys(a.colorMap).length, note: "frame data untouched — lossless" });
+      const { buffer, replaced } = patchPalettes(buf, a.colorMap);
+      fs.writeFileSync(a.outFile, buffer);
+      const misses = Object.entries(replaced).filter(([, n]) => n === 0).map(([h]) => h);
+      return ok({
+        wrote: a.outFile, replaced,
+        ...(misses.length ? { warning: `no colour table contains: ${misses.join(", ")} — nothing changed for those. Use colors_inspect on the file to find the exact hexes.` } : { note: "frame data untouched — lossless" }),
+      });
     }
-    if (!a.msPerFrame) return fail("'retime' needs msPerFrame");
+    if (a.msPerFrame == null) return fail("'retime' needs msPerFrame");
     const { frames } = loadFrames(a.file);
     const delay = Math.max(2, Math.round(a.msPerFrame / 10));
     frames.forEach((f) => { f.delay = delay; });
@@ -344,10 +389,11 @@ server.registerTool("gif_patch", {
 /* ---------- canon_info ---------- */
 server.registerTool("canon_info", {
   description:
-    "Show the resolved canon (palette size, regions with their rules and protection flags, scale table, thresholds) and optionally census a file against it — how many pixels each region matches, and how many match nothing (unmatched pixels mean your region definitions have gaps).",
+    "Show the resolved canon (palette size, regions with their rules and protection flags, scale table, thresholds) and optionally census a file against it — how many pixels each region matches, and how many match nothing (unmatched pixels mean your region definitions have gaps). " +
+    "Pass canonPath or censusFile — without either there is nowhere to search from (the server's working directory is the client's, not your project's).",
   inputSchema: {
     ...canonOpt,
-    censusFile: z.string().optional().describe("count region membership of this file's first frame"),
+    censusFile: z.string().optional().describe("count region membership of this file's first frame (also used as the search origin for the canon)"),
     listColors: z.boolean().optional().describe("include the full palette hex list"),
     ...cellOpts,
   },
