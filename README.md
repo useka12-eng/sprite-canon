@@ -16,9 +16,15 @@ sprite-canon takes the opposite approach, extracted from a real game project tha
 
 ## Install
 
-### Claude Desktop — one click
+### Claude Desktop — one file, no config
 
-Download `sprite-canon.mcpb` from the [latest release](https://github.com/useka12-eng/sprite-canon/releases/latest), then double-click it (or drag it into Claude Desktop → Settings → Extensions). That's the whole install: the bundle ships its own dependencies, and Claude Desktop provides the Node runtime.
+1. Download `sprite-canon.mcpb` from the [latest release](https://github.com/useka12-eng/sprite-canon/releases/latest).
+2. In Claude Desktop, open **Settings → Extensions** (☰ menu → File → Settings on Windows).
+3. **Drag the `.mcpb` file into the Extensions page**, review, and click Install.
+
+(Double-clicking the file also works *if* your OS has the `.mcpb` association registered — drag-and-drop always works. Alternative: Extensions → Advanced settings → Install Extension → pick the file.)
+
+That's the whole install: the bundle ships its own dependencies, and Claude Desktop provides the Node runtime. Requires the [Claude Desktop app](https://claude.ai/download) — for Claude Code see below.
 
 ### Claude Code / other MCP clients
 
