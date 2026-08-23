@@ -268,6 +268,25 @@ test("region learning from points records colours and lum range", () => {
   assert.ok(r.lumRange[0] < r.lumRange[1]);
 });
 
+/* ---------- palette projection ---------- */
+test("projectToPalette snaps every pixel onto the palette and reports shift", async () => {
+  const { projectToPalette } = await import("../src/core/palette.mjs");
+  const f = walkerFrame(0);
+  /* tint a few shirt pixels off-palette (simulating AI noise) */
+  const noisy = { w: f.w, h: f.h, data: Buffer.from(f.data) };
+  const o = (15 * 32 + 14) * 4;
+  noisy.data[o] = 0x45; noisy.data[o + 1] = 0xa5; noisy.data[o + 2] = 0x45;   // near shirtMid 40a040
+  const { frame, stats } = projectToPalette(noisy, walkerPalette());
+  assert.ok(stats.movedPixels >= 1);
+  assert.ok(stats.meanShift >= 0, "meanShift is a mean over ALL opaque pixels — one noisy pixel rounds to 0, and that is the point of the score");
+  /* every opaque pixel is now exactly on the palette */
+  const r = checkPalette([frame], CANON);
+  assert.ok(r.pass, r.details);
+  /* untouched pixels stayed identical */
+  const o2 = (15 * 32 + 16) * 4;
+  assert.deepEqual([frame.data[o2], frame.data[o2 + 1], frame.data[o2 + 2]], [0x40, 0xa0, 0x40]);
+});
+
 /* ---------- sheet ---------- */
 test("sheet composes and encodes", () => {
   const { png, cols } = composeSheet(

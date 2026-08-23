@@ -21,7 +21,7 @@ import { encodeGif, patchPalettes } from "../core/gif.mjs";
 import {
   CANON_FILE, findCanon, loadCanon, saveCanon, computeLumRange, DEFAULT_CHECKS,
 } from "../core/canon.mjs";
-import { learnPalette, learnRegionFromPoints, collectColors } from "../core/palette.mjs";
+import { learnPalette, learnRegionFromPoints, collectColors, projectToPalette } from "../core/palette.mjs";
 import { measureAnimation } from "../core/measure.mjs";
 import { repaintFrame, regionCensus } from "../core/repaint.mjs";
 import {
@@ -385,6 +385,39 @@ server.registerTool("gif_patch", {
     frames.forEach((f) => { f.delay = delay; });
     fs.writeFileSync(a.outFile, encodeGif(frames));
     return ok({ wrote: a.outFile, frames: frames.length, totalMs: frames.length * delay * 10 });
+  } catch (e) { return fail(e.message); }
+});
+
+/* ---------- sprite_conform ---------- */
+server.registerTool("sprite_conform", {
+  description:
+    "Snap every opaque pixel of a sprite to its NEAREST canon-palette colour — the deterministic tone-unifier for AI-generated art. " +
+    "Prompts cannot force a generator onto your palette; projection can: identity and silhouette stay, the hue family becomes exactly the canon's, and anti-aliasing collapses toward the canon's pixel-cluster chunkiness. " +
+    "The response's meanShift (average per-pixel colour distance moved) doubles as a candidate score: a sprite whose colours had to move far was never in your tone family — reject it and re-roll the generator instead of accepting a heavily distorted projection.",
+  inputSchema: {
+    file: z.string(),
+    outFile: z.string(),
+    ...canonOpt, ...cellOpts,
+  },
+}, async (a) => {
+  try {
+    const { canon } = resolveCanon(a.canonPath, a.file);
+    if (!canon.palette?.colors?.length) return fail("canon has no palette — run canon_init with sampleFiles first");
+    const loaded = loadFrames(a.file, a);
+    let total = 0, moved = 0, shiftSum = 0;
+    loaded.frames = loaded.frames.map((f) => {
+      const { frame, stats } = projectToPalette(f, canon.palette.colors, { alphaThreshold: 128 });
+      total += stats.totalOpaque; moved += stats.movedPixels; shiftSum += stats.meanShift * stats.totalOpaque;
+      return frame;
+    });
+    fs.mkdirSync(path.dirname(path.resolve(a.outFile)), { recursive: true });
+    saveFrames(a.outFile, loaded);
+    return ok({
+      wrote: a.outFile, frames: loaded.frames.length,
+      totalOpaque: total, movedPixels: moved,
+      meanShift: total ? Math.round((shiftSum / total) * 10) / 10 : 0,
+      note: "meanShift > ~40 usually means the source was far off-tone — consider re-rolling the generator instead of keeping a distorted projection",
+    });
   } catch (e) { return fail(e.message); }
 });
 

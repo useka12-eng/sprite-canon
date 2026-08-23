@@ -13,6 +13,53 @@
 import { loadFrames } from "./loader.mjs";
 import { rgbToHex, lum, hexToRgb } from "./colors.mjs";
 
+/* ---------- Palette projection ----------
+   Snap every opaque pixel to its nearest canon-palette colour. This is the
+   deterministic tone-unifier for GENERATED art: prompts cannot force a model
+   onto your palette, but projection can — identity and silhouette stay, hue
+   family becomes exactly the canon's. Also reports how far pixels had to move
+   (meanShift): a candidate whose colours moved a long way was never in your
+   tone family to begin with, which makes meanShift a usable accept/reject
+   score for generation candidates. */
+export function projectToPalette(im, paletteHexes, opts = {}) {
+  const alphaMin = opts.alphaThreshold ?? 128;
+  const pal = paletteHexes.map(hexToRgb);
+  const out = { w: im.w, h: im.h, data: Buffer.from(im.data), delay: im.delay };
+  const cache = new Map();
+  let moved = 0, total = 0, shiftSum = 0;
+  for (let i = 0; i < im.w * im.h; i++) {
+    const o = i * 4;
+    if (im.data[o + 3] < alphaMin) continue;
+    total++;
+    const r = im.data[o], g = im.data[o + 1], b = im.data[o + 2];
+    const k = (r << 16) | (g << 8) | b;
+    let best = cache.get(k);
+    if (best === undefined) {
+      let bi = 0, bd = Infinity;
+      for (let p = 0; p < pal.length; p++) {
+        const d = (pal[p][0] - r) ** 2 + (pal[p][1] - g) ** 2 + (pal[p][2] - b) ** 2;
+        if (d < bd) { bd = d; bi = p; }
+      }
+      best = bi;
+      cache.set(k, best);
+    }
+    const [nr, ng, nb] = pal[best];
+    if (nr !== r || ng !== g || nb !== b) {
+      moved++;
+      shiftSum += Math.sqrt((nr - r) ** 2 + (ng - g) ** 2 + (nb - b) ** 2);
+      out.data[o] = nr; out.data[o + 1] = ng; out.data[o + 2] = nb;
+    }
+  }
+  return {
+    frame: out,
+    stats: {
+      totalOpaque: total,
+      movedPixels: moved,
+      meanShift: total ? Math.round((shiftSum / total) * 10) / 10 : 0,
+    },
+  };
+}
+
 /** Count colours across files. Returns [{ hex, count }] sorted by count. */
 export function collectColors(files, opts = {}) {
   const alphaMin = opts.alphaThreshold ?? 128;

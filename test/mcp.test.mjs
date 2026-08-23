@@ -36,7 +36,7 @@ test("tools are listed", async () => {
   const names = tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
     "canon_info", "canon_init", "canon_learn", "colors_inspect",
-    "gif_patch", "sprite_measure", "sprite_repaint", "sprite_sheet", "sprite_verify",
+    "gif_patch", "sprite_conform", "sprite_measure", "sprite_repaint", "sprite_sheet", "sprite_verify",
   ]);
 });
 
