@@ -81,6 +81,10 @@ sprite_verify   → prove it: face untouched, nothing left over, no jitter, on p
 sprite_sheet    → look at the result as a sheet, zoomed, before it enters the game
 ```
 
+## Does it generalize?
+
+We blind-tested the full workflow on three freshly generated subjects in foreign styles — a 64px animated fox GIF, a 32px robot spritesheet, a 48px hooded merchant PNG — each driven end-to-end by an independent agent. All passed; the misses are documented too. **[Read the validation report](docs/validation.md)**.
+
 ## Lessons this tool encodes
 
 These are not hypothetical — each one shipped as a real defect first:
