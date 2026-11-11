@@ -1,0 +1,91 @@
+{
+  "created": "2026-11-11 18:54 KST",
+  "updated": "2026-11-11 18:54 KST",
+  "parts": {
+    "cpu": {
+      "label": "CPU: AMD 라이젠7 7800X3D",
+      "all": {
+        "price": 335200,
+        "name": "7800X3D 멀티팩 정품",
+        "kind": "현금 최저가",
+        "mall": "주식회사 요테크",
+        "since": "2026-11-11 18:54 KST"
+      },
+      "card": {
+        "price": 357580,
+        "name": "7800X3D 멀티팩 정품",
+        "kind": "N+멤버십 혜택가",
+        "mall": "",
+        "since": "2026-11-11 18:54 KST"
+      }
+    },
+    "ram": {
+      "label": "RAM: KingBank DDR5 32GB(16Gx2) 화이트",
+      "all": {
+        "price": 649340,
+        "name": "KingBank DDR5-6000 CL30 KRRW RGB 화이트 32GB(16Gx2)",
+        "kind": "카드결제 혜택가",
+        "mall": "하이마트",
+        "since": "2026-11-11 18:54 KST"
+      },
+      "card": {
+        "price": 649340,
+        "name": "KingBank DDR5-6000 CL30 KRRW RGB 화이트 32GB(16Gx2)",
+        "kind": "카드결제 혜택가",
+        "mall": "하이마트",
+        "since": "2026-11-11 18:54 KST"
+      }
+    },
+    "gpu": {
+      "label": "GPU: 라데온 RX 9070 XT 16GB (신품 전 모델)",
+      "all": {
+        "price": 1187000,
+        "name": "ASRock RX 9070 XT 스틸레전드 DARK",
+        "kind": "현금 최저가",
+        "mall": "A1피씨",
+        "since": "2026-11-11 18:54 KST"
+      },
+      "card": {
+        "price": 1349100,
+        "name": "XFX RX 9070 XT SWIFT",
+        "kind": "카드결제 혜택가",
+        "mall": "하이마트",
+        "since": "2026-11-11 18:54 KST"
+      }
+    },
+    "case": {
+      "label": "케이스: DEEPCOOL CH160 PLUS",
+      "all": {
+        "price": 78120,
+        "name": "DEEPCOOL CH160 PLUS (화이트)",
+        "kind": "카드결제 혜택가",
+        "mall": "롯데ON",
+        "since": "2026-11-11 18:54 KST"
+      },
+      "card": {
+        "price": 78120,
+        "name": "DEEPCOOL CH160 PLUS (화이트)",
+        "kind": "카드결제 혜택가",
+        "mall": "롯데ON",
+        "since": "2026-11-11 18:54 KST"
+      }
+    },
+    "psu": {
+      "label": "파워: SFX 화이트 750W 이상 80PLUS 골드",
+      "all": {
+        "price": 169000,
+        "name": "리안리 SP750 V2 80PLUS골드 화이트 (750W)",
+        "kind": "현금 최저가",
+        "mall": "노트빌리지",
+        "since": "2026-11-11 18:54 KST"
+      },
+      "card": {
+        "price": 188100,
+        "name": "리안리 SP750 V2 80PLUS골드 화이트 (750W)",
+        "kind": "카드결제 혜택가",
+        "mall": "롯데ON",
+        "since": "2026-11-11 18:54 KST"
+      }
+    }
+  }
+}
