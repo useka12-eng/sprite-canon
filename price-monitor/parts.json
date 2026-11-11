@@ -1,0 +1,113 @@
+{
+  "note": "각 부품은 후보(pcode) 묶음이며, 묶음 안에서 관측되는 가장 낮은 가격이 그 부품의 최저가다. pcode는 다나와 상품 코드.",
+  "parts": [
+    {
+      "id": "cpu",
+      "label": "CPU: AMD 라이젠7 7800X3D",
+      "candidates": [
+        {
+          "pcode": "19627934",
+          "name": "7800X3D 멀티팩 정품"
+        },
+        {
+          "pcode": "19627808",
+          "name": "7800X3D 정품"
+        }
+      ]
+    },
+    {
+      "id": "mb",
+      "label": "메인보드: GIGABYTE B850M AORUS ELITE WIFI6E ICE",
+      "candidates": [
+        {
+          "pcode": "73892000",
+          "name": "GIGABYTE B850M AORUS ELITE WIFI6E ICE 피씨디렉트"
+        },
+        {
+          "pcode": "73892423",
+          "name": "GIGABYTE B850M AORUS ELITE WIFI6E ICE 제이씨현"
+        }
+      ]
+    },
+    {
+      "id": "ram",
+      "label": "RAM: KingBank DDR5 32GB(16Gx2) 화이트",
+      "candidates": [
+        {
+          "pcode": "124480105",
+          "name": "KingBank DDR5-6000 CL30 KRRW RGB 화이트 32GB(16Gx2)"
+        },
+        {
+          "pcode": "124480038",
+          "name": "KingBank DDR5-6400 CL32 KRRW RGB 화이트 32GB(16Gx2)"
+        }
+      ]
+    },
+    {
+      "id": "gpu",
+      "label": "GPU: 라데온 RX 9070 XT 16GB 화이트 모델",
+      "candidates": [
+        {
+          "pcode": "77381780",
+          "name": "SAPPHIRE RX 9070 XT PURE OC"
+        },
+        {
+          "pcode": "99892346",
+          "name": "ASUS PRIME RX 9070 XT WHITE OC"
+        },
+        {
+          "pcode": "96981881",
+          "name": "에이서 프레데터 RX 9070 XT BiFrost WHITE OC"
+        },
+        {
+          "pcode": "77318285",
+          "name": "ASRock RX 9070 XT 스틸레전드"
+        },
+        {
+          "pcode": "99288146",
+          "name": "GIGABYTE RX 9070 XT GAMING OC ICE (피씨디렉트)"
+        },
+        {
+          "pcode": "99128543",
+          "name": "GIGABYTE RX 9070 XT GAMING OC ICE (제이씨현)"
+        },
+        {
+          "pcode": "124480888",
+          "name": "SAPPHIRE RX 9070 XT NITRO+ OC PhantomLink Polar"
+        }
+      ]
+    },
+    {
+      "id": "case",
+      "label": "케이스: DEEPCOOL CH160 PLUS (화이트)",
+      "candidates": [
+        {
+          "pcode": "97117673",
+          "name": "DEEPCOOL CH160 PLUS (화이트)"
+        }
+      ]
+    },
+    {
+      "id": "psu",
+      "label": "파워: SFX 화이트 750W 이상 80PLUS 골드",
+      "candidates": [
+        {
+          "pcode": "100695704",
+          "name": "리안리 SP750 V2 80PLUS골드 화이트 (750W)"
+        },
+        {
+          "pcode": "98409965",
+          "name": "FSP DAGGER PRO 850W 80PLUS골드 ATX3.1 화이트"
+        },
+        {
+          "pcode": "113761283",
+          "name": "FSP DAGGER PRO 850W GOLD 화이트 ATX3.0"
+        },
+        {
+          "pcode": "100695731",
+          "name": "리안리 SP850 V2 80PLUS골드 화이트 (850W)"
+        }
+      ]
+    }
+  ]
+}
