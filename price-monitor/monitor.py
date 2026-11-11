@@ -8,6 +8,9 @@ N+멤버십 혜택가, 현금 최저가)을 모아 가장 낮은 값을 구하�
   python3 monitor.py            현재가 조회 + 기준가 대비 판정 (기준가는 건드리지 않음)
   python3 monitor.py --update   하락한 부품의 기준가를 새 최저가로 갱신
   python3 monitor.py --init     기준가를 현재가로 새로 만든다 (최초 1회)
+  python3 monitor.py --state "cpu 335200/357580 ram ..."
+                                baseline.json 대신 문자열(부품ID 전체최저/카드최저)을 기준가로 쓰고,
+                                갱신된 문자열을 NEW_STATE 줄로 출력한다 (파일을 쓰지 않음)
 
 종료 코드: 0 = 하락 없음, 10 = 하락 있음, 2 = 조회 실패(판정 불가 부품 존재)
 표준 라이브러리만 사용한다. 네트워크는 curl 로 호출한다(프록시 설정을 그대로 따른다).
@@ -174,7 +177,15 @@ def main():
             for p in result}}
         json.dump(base, open(BASELINE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
         print("기준가 생성 완료")
-    base = json.load(open(BASELINE, encoding="utf-8"))
+    state = None
+    if mode == "--state":
+        state = {}
+        for pid, pair in re.findall(r"(\w+) (\d+/\d+)", sys.argv[2]):
+            a, c = pair.split("/")
+            state[pid] = {"all": {"price": int(a)}, "card": {"price": int(c)}}
+        base = {"parts": state}
+    else:
+        base = json.load(open(BASELINE, encoding="utf-8"))
 
     drops, lines = [], []
     totals = {t: [0, 0] for t, _, _ in TRACKS}
@@ -220,6 +231,11 @@ def main():
         base["updated"] = now
         json.dump(base, open(BASELINE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
         print("기준가 갱신 완료 (baseline.json)")
+    if state is not None:
+        for p, t, title, cur, old, diff in drops:
+            state.setdefault(p["id"], {})[t] = {"price": cur["price"]}
+        print("NEW_STATE " + " ".join(
+            f"{pid} {v['all']['price']}/{v['card']['price']}" for pid, v in state.items()))
     if incomplete:
         print("조회 실패 부품:", ", ".join(incomplete))
     for p in result:
